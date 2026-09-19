@@ -36,6 +36,8 @@ browser at the already-running instance. See [English quick start](#english-quic
 | `ui/wizard.xaml` | 向导界面 |
 | `tests/setup-gui.tests.ps1` | 向导的自动化测试（无头 + 可选开窗） |
 | `tests/fetch.tests.ps1` | 获取检出流程的测试（用替身命令，不联网） |
+| `installer/build.ps1` | 出安装包与便携 ZIP，并在编译前做发布一致性对账 |
+| `installer/dsh-shortcut.iss` | Inno Setup 打包脚本 |
 | `docs/dsh-tool-scheduler-symbol.md` | `reading 'prepare'` 崩溃的根因、修复与验证方法 |
 | `patches/fix-tool-scheduler-symbol.patch` | 上述修复的一行补丁 |
 
@@ -182,6 +184,44 @@ powershell -NoProfile -STA -ExecutionPolicy Bypass -File .\tests\setup-gui.tests
 
 测试全程隔离：`config.json` 写进 `%DSH_SHORTCUT_CONFIG%` 指向的临时文件，快捷方式写进临时目录，
 跑完还会断言真实的 `config.json` 与桌面快捷方式没有被波及。
+
+## 打包与发布
+
+```powershell
+# 出便携 ZIP（不需要额外装东西）
+.\installer\build.ps1 -SkipInstaller
+
+# 出安装包 + 便携 ZIP（需要 Inno Setup 6：winget install JRSoftware.InnoSetup）
+.\installer\build.ps1
+
+# 只做发布一致性对账，不产出任何文件（不需要 Inno Setup）
+.\installer\build.ps1 -LintOnly
+```
+
+产物落在 `dist/`（已被 git 忽略）：
+
+| 产物 | 说明 |
+| --- | --- |
+| `dsh-shortcut-setup-<版本>.exe` | 安装包。**免管理员**装到 `%LOCALAPPDATA%\Programs\dsh-shortcut`，带卸载器，装完可直接启动配置向导 |
+| `dsh-shortcut-portable-<版本>.zip` | 免安装。解压到任意目录，双击里面的 `setup-gui.cmd` |
+
+### 编译前的对账（`-LintOnly`）
+
+`.iss` 最容易出的错是「漏了一个文件」或「路径写错」，这两类不需要编译器就能查出来：
+
+1. `.iss` 里 `Source:` 引用的每个文件都真的存在
+2. 打包清单里的每个文件都被 `.iss` 引用
+3. 仓库里所有 git 跟踪的文件，要么在打包清单里，要么在「故意不打包」名单里
+   —— **新加了一个 lib 却忘了打进产物时，这条会立刻报警**
+
+### 两个打包注意点
+
+- **Inno Setup 6 官方不带简体中文语言文件**，所以 `[Languages]` 目前只有英文。
+  要中文界面得自己放 `ChineseSimplified.isl`（步骤写在 `installer/dsh-shortcut.iss` 顶部注释里）；
+  直接引用它会让编译当场失败。
+- **`.iss` 还没经过真实编译验证** —— 写这份脚本的机器上没有 Inno Setup。
+  上面那套对账覆盖的是文件清单类错误；编译器层面的问题（语法、段落名）
+  要等你装好 Inno Setup 跑一次 `build.ps1` 才能确认。便携 ZIP 那条路径是完整验证过的。
 
 ## 相关
 

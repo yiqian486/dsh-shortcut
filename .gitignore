@@ -13,6 +13,9 @@
 # 生成的快捷方式(用 install.ps1 重新生成,不必入库)
 *.lnk
 
+# 构建产物:安装包与便携 ZIP 都由 installer/build.ps1 生成
+dist/
+
 # 本机日志
 *.log
 open-dsh.log
