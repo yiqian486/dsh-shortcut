@@ -85,6 +85,7 @@ function Set-DshWizardBusy {
   param([Parameter(Mandatory)] [object] $Window, [Parameter(Mandatory)] [bool] $Busy)
   $Window.FindName('btnRecheck').IsEnabled = (-not $Busy)
   $Window.FindName('btnBrowse').IsEnabled = (-not $Busy)
+  $Window.FindName('btnFetch').IsEnabled = (-not $Busy)
   if ($Busy) {
     $Window.FindName('btnInstall').IsEnabled = $false
   } else {
@@ -370,6 +371,82 @@ function Invoke-DshWizardInstall {
 
 # ---------------------------------------------------------------- 装配窗口
 
+<#
+  后台获取 dsh 检出，输出实时流进日志窗口。
+
+  为什么用 ConcurrentQueue：worker 跑在独立 runspace 里，把界面脚本块传进去当回调是行不通的
+  （脚本块不能跨 runspace）。所以让 worker 往一个共享队列里塞行，界面线程用 DispatcherTimer
+  定期排空并写进 TextBox。
+
+  真实 clone / pnpm install 可能要几分钟，所以整个过程不阻塞界面：
+  worker 在跑，计时器每 150ms 把新行刷出来。
+#>
+function Start-DshWizardFetch {
+  param([Parameter(Mandatory)] [object] $Window, [string] $Target)
+
+  if (-not $Target) { $Target = Join-Path $env:USERPROFILE 'deepseek-harness' }
+
+  $repoBox = $Window.FindName('tbRepo')
+  $log = $Window.FindName('tbLog')
+  $log.Clear()
+  $Window.FindName('tbLogTitle').Visibility = [System.Windows.Visibility]::Visible
+  $log.Visibility = [System.Windows.Visibility]::Visible
+  $Window.FindName('pbProgress').IsIndeterminate = $true
+  Set-DshWizardBusy -Window $Window -Busy $true
+  Set-DshWizardSummary -Window $Window -Text "正在获取 dsh 检出，可能要几分钟 …"
+
+  $queue = New-Object System.Collections.Concurrent.ConcurrentQueue[string]
+  $root = $script:DshRoot
+
+  $shell = [powershell]::Create()
+  [void]$shell.AddScript({
+      param($rootPath, $targetPath, $sink)
+      . (Join-Path $rootPath 'lib\config.ps1')
+      . (Join-Path $rootPath 'lib\checks.ps1')
+      . (Join-Path $rootPath 'lib\deps.ps1')
+      . (Join-Path $rootPath 'lib\fetch.ps1')
+      Invoke-DshFetch -Target $targetPath -OnOutput {
+        param($line)
+        $sink.Enqueue([string]$line)
+      }
+    }).AddArgument($root).AddArgument($Target).AddArgument($queue)
+
+  $handle = $shell.BeginInvoke()
+
+  $timer = New-Object System.Windows.Threading.DispatcherTimer
+  $timer.Interval = [TimeSpan]::FromMilliseconds(150)
+
+  $tick = {
+    # 先把队列排空，再判断是否结束 —— 反过来会丢掉最后几行
+    [string] $line = $null
+    while ($queue.TryDequeue([ref]$line)) { $log.AppendText("$line`r`n") }
+    $log.ScrollToEnd()
+
+    if (-not $handle.IsCompleted) { return }
+    $timer.Stop()
+
+    $result = $null
+    try   { $result = $shell.EndInvoke($handle) }
+    catch { $log.AppendText("获取失败：$($_.Exception.Message)`r`n") }
+    finally { $shell.Dispose() }
+
+    $Window.FindName('pbProgress').IsIndeterminate = $false
+    Set-DshWizardBusy -Window $Window -Busy $false
+
+    if ($result -and $result.Ok) {
+      $repoBox.Text = $result.Target
+      Set-DshWizardSummary -Window $Window -Text $result.Messages[-1] -Level 'ok'
+    } elseif ($result) {
+      Set-DshWizardSummary -Window $Window -Text $result.Messages[-1] -Level 'fail'
+    }
+    # 取完重新自检：依赖/检出/tsx 的状态都变了
+    Start-DshWizardCheck -Window $Window -Synchronous
+  }.GetNewClosure()
+
+  $timer.Add_Tick($tick)
+  $timer.Start()
+}
+
 function Initialize-DshWizardWindow {
   param([Parameter(Mandatory)] [object] $Window)
 
@@ -409,6 +486,11 @@ function Initialize-DshWizardWindow {
         $Window.FindName('tbRepo').Text = $dialog.SelectedPath
         Start-DshWizardCheck -Window $Window
       }
+    }.GetNewClosure())
+
+  $Window.FindName('btnFetch').Add_Click({
+      $target = "$($Window.FindName('tbRepo').Text)".Trim()
+      Start-DshWizardFetch -Window $Window -Target $target
     }.GetNewClosure())
 
   $Window.FindName('btnInstall').Add_Click({

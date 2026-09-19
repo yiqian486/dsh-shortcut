@@ -164,9 +164,12 @@
             <Grid.ColumnDefinitions>
               <ColumnDefinition Width="*"/>
               <ColumnDefinition Width="Auto"/>
+              <ColumnDefinition Width="Auto"/>
             </Grid.ColumnDefinitions>
             <TextBox x:Name="tbRepo" Style="{StaticResource FieldBox}"/>
             <Button x:Name="btnBrowse" Grid.Column="1" Content="浏览…"
+                    Margin="8,0,0,0" Style="{StaticResource GhostButton}"/>
+            <Button x:Name="btnFetch" Grid.Column="2" Content="获取 dsh"
                     Margin="8,0,0,0" Style="{StaticResource GhostButton}"/>
           </Grid>
           <TextBlock x:Name="tbRepoHint" Style="{StaticResource Hint}" Margin="0,6,0,0"

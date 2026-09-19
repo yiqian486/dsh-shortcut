@@ -51,6 +51,7 @@ Check 'tbRepo 已预填' ("$($w.FindName('tbRepo').Text)" -ne '') "$($w.FindName
 Check 'tbPort 已预填为数字' ("$($w.FindName('tbPort').Text)" -match '^\d+$') "$($w.FindName('tbPort').Text)"
 Check 'tbName 已预填' ("$($w.FindName('tbName').Text)" -ne '') "$($w.FindName('tbName').Text)"
 Check '来源提示已填' ("$($w.FindName('tbRepoSource').Text)" -ne '') "$($w.FindName('tbRepoSource').Text)"
+Check '「获取 dsh」按钮存在' ($null -ne $w.FindName('btnFetch')) ''
 Write-Host "     来源提示 = $($w.FindName('tbRepoSource').Text)"
 
 Write-Host "`n=== 2) 同步自检：有效检出 ===" -ForegroundColor Cyan
@@ -140,25 +141,48 @@ Check '真实 config 未被创建' (-not (Test-Path -LiteralPath (Join-Path $env
 Check '真实快捷方式仍在' (Test-Path -LiteralPath (Join-Path $here '打开 DSH.lnk')) ''
 
 if ($ShowWindow) {
-  Write-Host "`n=== 9) 真开一次窗口（3 秒后自动关闭） ===" -ForegroundColor Cyan
+  Write-Host "`n=== 9) 真开窗口：异步自检 + 获取 dsh 的完整链路 ===" -ForegroundColor Cyan
   $real = Import-DshWizardXaml -Path (Get-DshWizardWindowPath)
   Initialize-DshWizardWindow -Window $real
   # 这里是「不显示窗口就测不到」的那条链路：ContentRendered 触发异步自检，
   # DispatcherTimer 轮询 runspace，完成后回来渲染行。必须真的跑消息循环。
   $real.Add_ContentRendered({ Start-DshWizardCheck -Window $real }.GetNewClosure()) | Out-Null
+
+  # 顺带把「获取 dsh」的异步链路也走一遍。目标故意指向一个**被占用**的目录：
+  # Invoke-DshFetch 在联网之前就会拒绝，所以这里不碰网络，却能验证
+  # runspace → 共享队列 → DispatcherTimer → 日志窗口 这条完整通路。
+  $occupiedDir = Join-Path $workDir 'occupied-target'
+  New-Item -ItemType Directory -Force -Path $occupiedDir | Out-Null
+  'stray' | Set-Content -LiteralPath (Join-Path $occupiedDir 'stray.txt')
+
+  $phase = 0
   $auto = New-Object System.Windows.Threading.DispatcherTimer
-  $auto.Interval = [TimeSpan]::FromSeconds(3)
-  $auto.Add_Tick({ $auto.Stop(); $real.Close() }.GetNewClosure())
+  $auto.Interval = [TimeSpan]::FromMilliseconds(1200)
+  $tickAuto = {
+    $phase++
+    if ($phase -eq 1) {
+      Start-DshWizardFetch -Window $real -Target $occupiedDir
+    } elseif ($phase -ge 4) {
+      $auto.Stop()
+      $real.Close()
+    }
+  }.GetNewClosure()
+  $auto.Add_Tick($tickAuto)
   $auto.Start()
   [void]$real.ShowDialog()
+
   $rendered = $real.FindName('pnlChecks').Children.Count
   Check '开窗后异步自检渲染出 8 行' ($rendered -eq 8) "实际 $rendered"
   Check '开窗后摘要已更新' ("$($real.FindName('tbSummary').Text)" -ne '') ''
+  $fetchLog = "$($real.FindName('tbLog').Text)"
+  Check '获取流程的输出进了日志窗口' ($fetchLog -match '非空') "日志=$fetchLog"
+  Check '获取结束后「获取 dsh」按钮恢复可用' ($real.FindName('btnFetch').IsEnabled -eq $true) "IsEnabled=$($real.FindName('btnFetch').IsEnabled)"
   Write-Host "     摘要 = $($real.FindName('tbSummary').Text)"
 }
 
 Remove-Item -LiteralPath $env:DSH_SHORTCUT_CONFIG -ErrorAction SilentlyContinue
 Remove-Item -Recurse -Force $global:tempPlace -ErrorAction SilentlyContinue
+Remove-Item -Recurse -Force $workDir -ErrorAction SilentlyContinue
 
 Write-Host ''
 if ($script:fail -eq 0) { Write-Host "全部通过" -ForegroundColor Green }

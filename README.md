@@ -31,9 +31,11 @@ browser at the already-running instance. See [English quick start](#english-quic
 | `lib/config.ps1` | 配置读写与路径解析：参数 > 环境变量 > `config.json` > 默认 |
 | `lib/checks.ps1` | 环境自检：node / git / pnpm / 检出 / tsx / 构建产物 / 凭据 / 端口 |
 | `lib/deps.ps1` | 依赖安装：winget 优先，退到官方下载页，装完回填 `PATH` |
+| `lib/fetch.ps1` | 一键获取 dsh 检出：前置门禁 → `git clone --depth 1` → `pnpm install` → 复查 |
 | `lib/shortcut.ps1` | 生成 / 删除 `.lnk`（向导与命令行共用同一份） |
 | `ui/wizard.xaml` | 向导界面 |
-| `tests/setup-gui.tests.ps1` | 向导的自动化测试 |
+| `tests/setup-gui.tests.ps1` | 向导的自动化测试（无头 + 可选开窗） |
+| `tests/fetch.tests.ps1` | 获取检出流程的测试（用替身命令，不联网） |
 | `docs/dsh-tool-scheduler-symbol.md` | `reading 'prepare'` 崩溃的根因、修复与验证方法 |
 | `patches/fix-tool-scheduler-symbol.patch` | 上述修复的一行补丁 |
 
@@ -52,8 +54,10 @@ browser at the already-running instance. See [English quick start](#english-quic
 
 1. **自检环境**，逐项标出 ✅ 正常 / ⚠️ 可忽略 / ❌ 必须解决
 2. 缺 **Node.js / Git / pnpm** 时，那一行会出现「**一键安装**」按钮 —— 走 winget；winget 不可用就打开官方下载页
-3. 选 dsh 检出目录（带「浏览」）、端口、快捷方式名字与位置
-4. 点「**安装**」：写入 `%USERPROFILE%\.dsh-shortcut\config.json`，并按勾选生成快捷方式
+3. **还没有 dsh 检出**？点「**获取 dsh**」：先过前置门禁（缺 git/node/pnpm 会先让你装），
+   再 `git clone --depth 1` + `pnpm install`，输出实时打在日志区，失败会说明原因而不是静默停下
+4. 选 dsh 检出目录（带「浏览」）、端口、快捷方式名字与位置
+5. 点「**安装**」：写入 `%USERPROFILE%\.dsh-shortcut\config.json`，并按勾选生成快捷方式
 
 > 向导生成的快捷方式**不带** `-Repo`，路径统一由 `config.json` 决定。
 > 因为命令行参数优先级高于配置，如果快捷方式里烧了旧路径，以后在向导里改路径就会被它压住。
