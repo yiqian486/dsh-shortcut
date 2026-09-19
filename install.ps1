@@ -1,6 +1,9 @@
 ﻿<#
   为 open-dsh.ps1 创建 Windows 快捷方式(.lnk)。
 
+  这个脚本只是命令行外壳；真正的生成逻辑在 lib/shortcut.ps1，向导 setup-gui.ps1 用同一份，
+  避免两处逻辑漂移。
+
   用法:
     powershell -ExecutionPolicy Bypass -File .\install.ps1
     powershell -ExecutionPolicy Bypass -File .\install.ps1 -Place StartMenu
@@ -11,7 +14,11 @@
   生成的快捷方式指向:
     powershell.exe -NoProfile -ExecutionPolicy Bypass -File "<本目录>\open-dsh.ps1" [-Port N] [-Repo <检出>]
 
-  -Repo 会把你的 dsh 检出路径烧进快捷方式,这样别人(或换了机器)不用再设 DSH_REPO。
+  关于 -Repo:
+    传了就把检出路径烧进快捷方式；**不传则不烧**，由 open-dsh.ps1 在运行时按
+    「命令行参数 > DSH_REPO > config.json > 内置默认」解析。
+    向导生成的快捷方式走的就是「不烧」这条路——否则快捷方式里的旧值（参数优先级更高）
+    会压过用户之后在向导里改的 config.json。
 #>
 [CmdletBinding()]
 param(
@@ -25,74 +32,26 @@ param(
 
 $ErrorActionPreference = 'Stop'
 
-$here   = Split-Path -Parent $MyInvocation.MyCommand.Path
-$target = Join-Path $here 'open-dsh.ps1'
+$here = $PSScriptRoot
+. (Join-Path $here 'lib\shortcut.ps1')
 
-if (-not (Test-Path $target)) { throw "找不到 open-dsh.ps1:$target" }
+$launcher = Join-Path $here 'open-dsh.ps1'
+if (-not (Test-Path -LiteralPath $launcher)) { throw "找不到 open-dsh.ps1：$launcher" }
 
-# 解析放置目录。注意:某些环境下 [Environment]::GetFolderPath('Desktop') 会返回不存在的路径,
-# 所以拿到后一律做存在性校验,不行就退回 USERPROFILE / APPDATA 下的常规位置。
-function Resolve-PlaceDirectory {
-  param([string] $Place)
-  if ($Place -eq 'Desktop') {
-    $candidates = @(
-      [Environment]::GetFolderPath('Desktop'),
-      (Join-Path $env:USERPROFILE 'Desktop')
-    )
-  } else {
-    $candidates = @(
-      [Environment]::GetFolderPath('StartMenu'),
-      (Join-Path $env:APPDATA 'Microsoft\Windows\Start Menu\Programs')
-    )
-  }
-  foreach ($c in $candidates) {
-    if ($c -and (Test-Path -LiteralPath $c)) { return $c }
-  }
-  throw "找不到可用的目录:$($candidates -join ' | ')"
-}
+$placeKind = if ($Dir) { '指定目录' } elseif ($Place -eq 'Desktop') { '桌面' } else { '开始菜单' }
 
-if ($Dir) {
-  if (-not (Test-Path -LiteralPath $Dir)) { New-Item -ItemType Directory -Force -Path $Dir | Out-Null }
-  $placeDir = (Resolve-Path -LiteralPath $Dir).ProviderPath
-  $placeKind = '指定目录'
-} else {
-  $placeDir  = Resolve-PlaceDirectory -Place $Place
-  $placeKind = if ($Place -eq 'Desktop') { '桌面' } else { '开始菜单' }
-}
+$result = New-DshShortcut -LauncherPath $launcher -Name $Name -Directory $Dir -Place $Place `
+  -Port $Port -Repo $Repo -Force:$Force
 
-$lnkPath = Join-Path $placeDir "$Name.lnk"
-if ((Test-Path -LiteralPath $lnkPath) -and (-not $Force)) {
-  Write-Host "[install] 已存在:$lnkPath(要覆盖请加 -Force)" -ForegroundColor Yellow
+if ($result.Skipped) {
+  Write-Host "[install] $($result.Message)" -ForegroundColor Yellow
   exit 0
 }
 
-$powershellExe = Join-Path $env:SystemRoot 'System32\WindowsPowerShell\v1.0\powershell.exe'
-if (-not (Test-Path -LiteralPath $powershellExe)) { $powershellExe = 'powershell.exe' }
-
-$arguments = "-NoProfile -ExecutionPolicy Bypass -File `"$target`""
-if ($Port) { $arguments += " -Port $Port" }
-if ($Repo) { $arguments += " -Repo `"$Repo`"" }
-
-# 图标:优先用 node.exe(实际运行时),没有就用 PowerShell 自己的
-$icon = 'powershell.exe,0'
-$nodeExe = (Get-Command node -ErrorAction SilentlyContinue).Source
-if ($nodeExe -and (Test-Path -LiteralPath $nodeExe)) { $icon = "$nodeExe,0" }
-
-$shell = New-Object -ComObject WScript.Shell
-$shortcut = $shell.CreateShortcut($lnkPath)
-$shortcut.TargetPath       = $powershellExe
-$shortcut.Arguments        = $arguments
-$shortcut.WorkingDirectory = $here
-$shortcut.IconLocation     = $icon
-$shortcut.Description      = 'Open the local DeepSeek Harness Web GUI (starts it first when it is not running)'
-$shortcut.WindowStyle      = 1
-$shortcut.Save()
-
-if (Test-Path -LiteralPath $lnkPath) {
-  Write-Host "[install] 已创建($placeKind):$lnkPath" -ForegroundColor Green
-  Write-Host "[install] target : $powershellExe"
-  Write-Host "[install] args   : $arguments"
-  Write-Host "[install] workdir: $here"
-} else {
-  throw "创建失败:$lnkPath"
+Write-Host "[install] 已创建($placeKind):$($result.Path)" -ForegroundColor Green
+Write-Host "[install] target : $($result.TargetPath)"
+Write-Host "[install] args   : $($result.Arguments)"
+Write-Host "[install] workdir: $($result.WorkingDirectory)"
+if (-not $Repo) {
+  Write-Host '[install] 未绑定检出路径：启动时按 参数 > DSH_REPO > config.json > 默认 解析。' -ForegroundColor DarkGray
 }
