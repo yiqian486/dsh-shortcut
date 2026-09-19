@@ -1,9 +1,12 @@
 ﻿<#
   启动本地源码仓库里的 dsh。
 
-  路径默认值（都可覆盖，不是自动探测）：
-    -Repo     默认 D:\deepseek-harness\deepseek-harness（作者本机路径），可用环境变量 DSH_REPO 覆盖
-    -DevHome  默认 %USERPROFILE%\.dsh-dev-home，可用环境变量 DSH_DEV_HOME 覆盖
+  路径解析优先级（高 → 低）：
+    1. 命令行参数   -Repo / -DevHome / -Port
+    2. 环境变量     DSH_REPO / DSH_DEV_HOME / DSH_PORT
+    3. config.json  %USERPROFILE%\.dsh-shortcut\config.json（由 setup-gui.ps1 写入）
+    4. 内置默认值   -Repo 默认 D:\deepseek-harness\deepseek-harness（作者本机路径），
+                    -DevHome 默认 %USERPROFILE%\.dsh-dev-home
 
   背景（为什么需要这个脚本）：
   1. 本地检出里同时存在两套模块图：
@@ -30,11 +33,18 @@ param(
   [ValidateSet('lib', 'src')] [string] $Mode = 'lib',
   [int] $Port = 3080,
   [switch] $Open,
-  [string] $Repo = $(if ($env:DSH_REPO) { $env:DSH_REPO } else { 'D:\deepseek-harness\deepseek-harness' }),
-  [string] $DevHome = $(if ($env:DSH_DEV_HOME) { $env:DSH_DEV_HOME } else { Join-Path $env:USERPROFILE '.dsh-dev-home' })
+  [string] $Repo,
+  [string] $DevHome
 )
 
 $ErrorActionPreference = 'Stop'
+
+# 统一路径解析,见 lib/config.ps1
+. (Join-Path $PSScriptRoot 'lib\config.ps1')
+$settings = Resolve-DshShortcutSettings -Bound $PSBoundParameters
+$Repo    = $settings.Repo
+$DevHome = $settings.DevHome
+$Port    = $settings.Port
 
 # 和 open-dsh.ps1 行为一致：出错时把窗口停住，别让报错一闪而过
 function Stop-WithMessage {
@@ -47,13 +57,17 @@ function Stop-WithMessage {
   exit 1
 }
 
-if (-not (Test-Path (Join-Path $Repo 'package.json'))) {
-  Stop-WithMessage "找不到本地检出：$Repo（用 -Repo <你的检出路径> 或环境变量 DSH_REPO 指定）"
+# 总兜底：任何没被预期分支接住的终止错误都停下来等回车，别让窗口一闪而过。
+trap { Stop-WithMessage "意外错误：$($_.Exception.Message)" }
+
+$pkgJson = Join-DshPath $Repo 'package.json'
+if (-not (Test-Path -LiteralPath $pkgJson)) {
+  Stop-WithMessage "找不到本地检出：$Repo（用 -Repo <你的检出路径>、环境变量 DSH_REPO 或 config.json 指定）"
 }
-if ($Mode -eq 'lib' -and -not (Test-Path (Join-Path $Repo 'apps\cli\lib\bin.js'))) {
+if ($Mode -eq 'lib' -and -not (Test-Path -LiteralPath (Join-DshPath $Repo 'apps\cli\lib\bin.js'))) {
   Stop-WithMessage "构建产物缺失，请先在 $Repo 执行：pnpm install; pnpm run build"
 }
-if ($Mode -eq 'src' -and -not (Test-Path (Join-Path $Repo 'node_modules\tsx\package.json'))) {
+if ($Mode -eq 'src' -and -not (Test-Path -LiteralPath (Join-DshPath $Repo 'node_modules\tsx\package.json'))) {
   Stop-WithMessage "源码图需要 tsx：$Repo 的依赖不完整，请先在该目录执行 pnpm install"
 }
 

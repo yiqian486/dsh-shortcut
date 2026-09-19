@@ -16,20 +16,33 @@
     powershell -ExecutionPolicy Bypass -File .\open-dsh.ps1 -Port 3081
     powershell -ExecutionPolicy Bypass -File .\open-dsh.ps1 -Repo 'C:\src\deepseek-harness'
 
+  路径解析优先级(高 → 低):
+    1. 命令行参数        -Repo / -DshHome / -Port
+    2. 环境变量          DSH_REPO / DSH_HOME / DSH_PORT
+    3. config.json       %USERPROFILE%\.dsh-shortcut\config.json(由 setup-gui.ps1 写入)
+    4. 内置默认值        -Repo 的默认值是作者本机路径,别人请显式指定
+
   参数:
-    -Repo    你的 dsh 检出根目录。优先取环境变量 DSH_REPO;默认值是作者本机路径,
-             在别的机器上请显式指定(或用 install.ps1 -Repo 直接烧进快捷方式)。
-    -DshHome dsh 的 home。优先取已有的 DSH_HOME,否则用 %USERPROFILE%\.dsh。
+    -Repo    你的 dsh 检出根目录。
+    -DshHome dsh 的 home,默认 %USERPROFILE%\.dsh。
     -Port    监听端口,默认 3080。
 #>
 [CmdletBinding()]
 param(
-  [string] $Repo    = $(if ($env:DSH_REPO) { $env:DSH_REPO } else { 'D:\deepseek-harness\deepseek-harness' }),
-  [string] $DshHome = $(if ($env:DSH_HOME) { $env:DSH_HOME } else { "$env:USERPROFILE\.dsh" }),
-  [int]    $Port    = 3080
+  [string] $Repo,
+  [string] $DshHome,
+  [int]    $Port = 3080
 )
 
 $ErrorActionPreference = 'Stop'
+
+# 统一路径解析,见 lib/config.ps1
+. (Join-Path $PSScriptRoot 'lib\config.ps1')
+$settings = Resolve-DshShortcutSettings -Bound $PSBoundParameters
+$Repo    = $settings.Repo
+$DshHome = $settings.DshHome
+$Port    = $settings.Port
+
 $url = "http://127.0.0.1:$Port"
 
 # 端口是否有人监听
@@ -90,6 +103,11 @@ function Stop-WithMessage {
   exit 1
 }
 
+# 总兜底：任何没被预期分支接住的终止错误都停下来等回车，别让窗口一闪而过。
+# 上面的 $ErrorActionPreference='Stop' 会把大多数 cmdlet 错误变成终止错误，trap 才接得住。
+# 放在函数定义之后：trap 触发时 Stop-WithMessage 必须已经存在。
+trap { Stop-WithMessage "意外错误：$($_.Exception.Message)" }
+
 try { $Host.UI.RawUI.WindowTitle = "DSH  (127.0.0.1:$Port)  -  关闭本窗口即停止" } catch { }
 
 # ---- 1) 已经在跑?------------------------------------------------------------
@@ -111,14 +129,19 @@ if (Test-TcpPort -Port $Port) {
 }
 
 # ---- 2) 启动前自检 ------------------------------------------------------------
-$entry = Join-Path $Repo 'apps\cli\src\bin.ts'
-if (-not (Test-Path (Join-Path $Repo 'package.json'))) {
-  Stop-WithMessage "找不到本地检出:$Repo"
+# 用 Join-DshPath 而不是 Join-Path：后者碰到不存在的盘符会抛异常，那样用户只会看到
+# 窗口一闪，而不是下面这些说得清楚的自检消息。
+$pkgJson = Join-DshPath $Repo 'package.json'
+$entry   = Join-DshPath $Repo 'apps\cli\src\bin.ts'
+$tsxPkg  = Join-DshPath $Repo 'node_modules\tsx\package.json'
+
+if (-not (Test-Path -LiteralPath $pkgJson)) {
+  Stop-WithMessage "找不到本地检出:$Repo(用 -Repo <你的检出路径>、环境变量 DSH_REPO 或 config.json 指定)"
 }
-if (-not (Test-Path $entry)) {
+if (-not (Test-Path -LiteralPath $entry)) {
   Stop-WithMessage "找不到 CLI 入口:$entry"
 }
-if (-not (Test-Path (Join-Path $Repo 'node_modules\tsx\package.json'))) {
+if (-not (Test-Path -LiteralPath $tsxPkg)) {
   Stop-WithMessage "缺 tsx:$Repo 的依赖不完整,请先在该目录执行 pnpm install"
 }
 if (-not (Get-Command node -ErrorAction SilentlyContinue)) {
@@ -139,7 +162,7 @@ if (-not (Test-Path (Join-Path $DshHome '.credentials.yaml'))) {
 $env:DSH_HOME = $DshHome
 
 Write-Host '[dsh] 未在运行,启动本地源码图...' -ForegroundColor Cyan
-Write-Host "[dsh] repo     : $Repo"
+Write-Host "[dsh] repo     : $Repo  (来源:$($settings.RepoSource))"
 Write-Host "[dsh] DSH_HOME : $DshHome"
 Write-Host "[dsh] GUI      : $url"
 Write-Host '[dsh] dsh 就绪后会自己打开浏览器;若没弹出来,复制下面 “dsh web:” 那行的完整 URL 手动打开。' -ForegroundColor DarkGray
