@@ -88,8 +88,8 @@ pnpm dsh --profile headless "用 read 工具读 pnpm-workspace.yaml，然后只�
 ```
 
 - 想和已经在跑的实例并存 → 换端口。
-- `start-dsh-local.ps1` 会强制使用独立 `DSH_HOME`（默认 `D:\deepseek-harness\.dsh-dev-home`，可用
-  `-DevHome` 覆盖）并复用一份凭据副本，避免和 `%USERPROFILE%\.dsh` 里的正式安装互相踩。
+- `start-dsh-local.ps1` 会强制使用独立 `DSH_HOME`（默认 `%USERPROFILE%\.dsh-dev-home`，可用
+  `-DevHome` 或环境变量 `DSH_DEV_HOME` 覆盖）并复用一份凭据副本，避免和 `%USERPROFILE%\.dsh` 里的正式安装互相踩。
 - `src` 模式改源码免构建；`lib` 模式等价于已安装消费者的解析方式，最接近正式安装。
 
 ## 可选清理（下次重启本地实例时再做）

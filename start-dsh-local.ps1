@@ -1,5 +1,9 @@
 ﻿<#
-  启动本地源码仓库里的 dsh（默认 D:\deepseek-harness\deepseek-harness）。
+  启动本地源码仓库里的 dsh。
+
+  路径默认值（都可覆盖，不是自动探测）：
+    -Repo     默认 D:\deepseek-harness\deepseek-harness（作者本机路径），可用环境变量 DSH_REPO 覆盖
+    -DevHome  默认 %USERPROFILE%\.dsh-dev-home，可用环境变量 DSH_DEV_HOME 覆盖
 
   背景（为什么需要这个脚本）：
   1. 本地检出里同时存在两套模块图：
@@ -19,22 +23,38 @@
     pwsh -File .\start-dsh-local.ps1 -Mode src       # 源码图（tsx，改源码免重新构建）
     pwsh -File .\start-dsh-local.ps1 -Port 3081      # 换端口，避免和已在跑的 dsh 抢 3080
     pwsh -File .\start-dsh-local.ps1 -Open           # 启动后自动打开浏览器
+    pwsh -File .\start-dsh-local.ps1 -Repo 'C:\src\deepseek-harness'  # 检出不在默认路径时
+    pwsh -File .\start-dsh-local.ps1 -DevHome 'C:\tmp\dsh-dev-home'   # 改开发用 home
 #>
 param(
   [ValidateSet('lib', 'src')] [string] $Mode = 'lib',
   [int] $Port = 3080,
   [switch] $Open,
   [string] $Repo = $(if ($env:DSH_REPO) { $env:DSH_REPO } else { 'D:\deepseek-harness\deepseek-harness' }),
-  [string] $DevHome = $(if ($env:DSH_DEV_HOME) { $env:DSH_DEV_HOME } else { 'D:\deepseek-harness\.dsh-dev-home' })
+  [string] $DevHome = $(if ($env:DSH_DEV_HOME) { $env:DSH_DEV_HOME } else { Join-Path $env:USERPROFILE '.dsh-dev-home' })
 )
 
 $ErrorActionPreference = 'Stop'
 
+# 和 open-dsh.ps1 行为一致：出错时把窗口停住，别让报错一闪而过
+function Stop-WithMessage {
+  param([string] $Message)
+  Write-Host ''
+  Write-Host "[dsh] $Message" -ForegroundColor Red
+  Write-Host ''
+  Write-Host '按 Enter 关闭此窗口...' -ForegroundColor Yellow
+  [void](Read-Host)
+  exit 1
+}
+
 if (-not (Test-Path (Join-Path $Repo 'package.json'))) {
-  throw "找不到本地检出：$Repo"
+  Stop-WithMessage "找不到本地检出：$Repo（用 -Repo <你的检出路径> 或环境变量 DSH_REPO 指定）"
 }
 if ($Mode -eq 'lib' -and -not (Test-Path (Join-Path $Repo 'apps\cli\lib\bin.js'))) {
-  throw "构建产物缺失，请先在 $Repo 执行：pnpm install; pnpm run build"
+  Stop-WithMessage "构建产物缺失，请先在 $Repo 执行：pnpm install; pnpm run build"
+}
+if ($Mode -eq 'src' -and -not (Test-Path (Join-Path $Repo 'node_modules\tsx\package.json'))) {
+  Stop-WithMessage "源码图需要 tsx：$Repo 的依赖不完整，请先在该目录执行 pnpm install"
 }
 
 New-Item -ItemType Directory -Force -Path $DevHome | Out-Null

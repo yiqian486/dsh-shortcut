@@ -78,9 +78,27 @@ browser at the already-running instance. See [English quick start](#english-quic
 .\start-dsh-local.ps1 -Mode src -Port 3081
 ```
 
-`start-dsh-local.ps1` 会强制使用**独立的** `DSH_HOME`（默认 `D:\deepseek-harness\.dsh-dev-home`），
+`start-dsh-local.ps1` 会强制使用**独立的** `DSH_HOME`（默认 `%USERPROFILE%\.dsh-dev-home`），
 避免和 `%USERPROFILE%\.dsh` 里的正式安装互相踩，并自动复用一份凭据副本。
 注意独立 home 里没有历史会话——会话历史是 home 级别的。
+
+## 路径和别人不一样怎么办
+
+两个脚本的 `-Repo` 默认值是作者本机的 `D:\deepseek-harness\deepseek-harness`，**不是自动探测的**。
+
+| 情况 | 结果 |
+| --- | --- |
+| `-Repo 'C:\你的\deepseek-harness'` | ✅ 正常 |
+| 设了环境变量 `DSH_REPO` | ✅ 正常 |
+| 什么都不传 | ❌ 自检直接失败并明确报错，窗口停住等你按回车 |
+
+`-DshHome` 默认 `%USERPROFILE%\.dsh`，`-DevHome` 默认 `%USERPROFILE%\.dsh-dev-home`，本身就是可移植的，
+分别可用 `DSH_HOME` / `DSH_DEV_HOME` 覆盖。
+
+`install.ps1 -Repo 'C:\你的\...'` 会把路径烧进快捷方式，之后双击就不用再管了。
+
+> ⚠️ 前提：本工具箱需要一份 **dsh 源码检出**（目录里有 `apps\cli\`，且已经 `pnpm install`）。
+> 如果你用的是 npm 全局安装或打包好的二进制，这些脚本不适用。
 
 ## 参数与配置
 
@@ -92,10 +110,15 @@ browser at the already-running instance. See [English quick start](#english-quic
 | `-DshHome` | `DSH_HOME` | `%USERPROFILE%\.dsh` |
 | `-Port` | – | `3080` |
 
-`start-dsh-local.ps1` 额外有 `-Mode lib\|src` 和 `-DevHome`（环境变量 `DSH_DEV_HOME`）。
+`start-dsh-local.ps1` 额外有：
 
-> ⚠️ `-Repo` 的默认值是**作者本机路径**。在别的机器上请显式传 `-Repo`，或设 `DSH_REPO`，
-> 或用 `install.ps1 -Repo <检出>` 直接烧进快捷方式。
+| 参数 | 环境变量 | 默认值 |
+| --- | --- | --- |
+| `-Mode` | – | `lib`（可选 `src`） |
+| `-DevHome` | `DSH_DEV_HOME` | `%USERPROFILE%\.dsh-dev-home` |
+
+> ⚠️ `-Repo` 的默认值是**作者本机路径**，不是自动探测的。在别的机器上请显式传 `-Repo`，
+> 或设 `DSH_REPO`，或用 `install.ps1 -Repo <检出>` 直接烧进快捷方式。详见上一节。
 
 ## 认证是怎么工作的
 
