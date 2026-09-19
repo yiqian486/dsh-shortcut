@@ -10,6 +10,7 @@
     Detail  当前状态的一句话描述
     Hint    Status 不是 ok 时给用户的下一步
     Fix     可选。需要装东西时填依赖名（git|node|pnpm），向导据此挂「一键安装」按钮
+    Group   界面分组：'dep' = 前置依赖（Node/Git/pnpm），'env' = 环境自检（检出/凭据/端口）
 
   约定：
     fail = 不解决就没法启动 dsh
@@ -64,10 +65,12 @@ function New-DshCheck {
     [Parameter(Mandatory)] [ValidateSet('ok', 'warn', 'fail')] [string] $Status,
     [string] $Detail = '',
     [string] $Hint = '',
-    [string] $Fix = ''
+    [string] $Fix = '',
+    # 界面分组：dep = 前置依赖（Node/Git/pnpm），env = 环境自检（检出/凭据/端口）
+    [ValidateSet('dep', 'env')] [string] $Group = 'env'
   )
   return [pscustomobject]@{
-    Id = $Id; Label = $Label; Status = $Status; Detail = $Detail; Hint = $Hint; Fix = $Fix
+    Id = $Id; Label = $Label; Status = $Status; Detail = $Detail; Hint = $Hint; Fix = $Fix; Group = $Group
   }
 }
 
@@ -88,32 +91,32 @@ function Get-DshCheckResults {
   $nodeInfo = Get-DshCommandInfo 'node'
   if ($nodeInfo.Present) {
     $v = Get-DshCommandVersion -Command 'node' -Arguments @('-v')
-    [void]$results.Add((New-DshCheck -Id 'node' -Label 'Node.js' -Status 'ok' -Detail "$v"))
+    [void]$results.Add((New-DshCheck -Id 'node' -Label 'Node.js' -Status 'ok' -Detail "$v" -Group 'dep'))
   } else {
     [void]$results.Add((New-DshCheck -Id 'node' -Label 'Node.js' -Status 'fail' `
-      -Detail '未安装' -Hint 'dsh 需要 Node.js 才能启动，可一键安装。' -Fix 'node'))
+      -Detail '未安装' -Hint 'dsh 需要 Node.js 才能启动，可一键安装。' -Fix 'node' -Group 'dep'))
   }
 
   # --- Git：只有“帮你去取 dsh 检出”才需要，所以缺了只算警告 ---
   $gitInfo = Get-DshCommandInfo 'git'
   if ($gitInfo.Present) {
     $v = Get-DshCommandVersion -Command 'git' -Arguments @('--version')
-    [void]$results.Add((New-DshCheck -Id 'git' -Label 'Git' -Status 'ok' -Detail "$v"))
+    [void]$results.Add((New-DshCheck -Id 'git' -Label 'Git' -Status 'ok' -Detail "$v" -Group 'dep'))
   } else {
     [void]$results.Add((New-DshCheck -Id 'git' -Label 'Git' -Status 'warn' `
-      -Detail '未安装' -Hint '已有 dsh 检出时可以不管；要让向导帮你下载 dsh 才需要。' -Fix 'git'))
+      -Detail '未安装' -Hint '已有 dsh 检出时可以不管；要让向导帮你下载 dsh 才需要。' -Fix 'git' -Group 'dep'))
   }
 
   # --- pnpm：同上，取 dsh 之后装依赖要用 ---
   $pnpmInfo = Get-DshCommandInfo 'pnpm'
   if ($pnpmInfo.Present) {
     $v = Get-DshCommandVersion -Command 'pnpm' -Arguments @('-v')
-    [void]$results.Add((New-DshCheck -Id 'pnpm' -Label 'pnpm' -Status 'ok' -Detail "$v"))
+    [void]$results.Add((New-DshCheck -Id 'pnpm' -Label 'pnpm' -Status 'ok' -Detail "$v" -Group 'dep'))
   } else {
     $corepack = Get-DshCommandInfo 'corepack'
     $how = if ($corepack.Present) { '可用 Node 自带的 corepack 启用' } else { '可用 npm install -g pnpm 安装' }
     [void]$results.Add((New-DshCheck -Id 'pnpm' -Label 'pnpm' -Status 'warn' `
-      -Detail '未安装' -Hint "已有 dsh 检出且装好依赖时可以不管；$how。" -Fix 'pnpm'))
+      -Detail '未安装' -Hint "已有 dsh 检出且装好依赖时可以不管；$how。" -Fix 'pnpm' -Group 'dep'))
   }
 
   # --- dsh 检出 ---

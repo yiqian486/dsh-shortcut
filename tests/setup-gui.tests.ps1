@@ -47,6 +47,22 @@ function GetBtn {
   return $b
 }
 
+# 从自检行里取出标签文字。行的结构是
+#   Border > Grid > [ Ellipse, StackPanel > StackPanel > TextBlock, Button ]
+# 取不到就返回一个显眼的占位串，让断言失败时能看出是结构变了，而不是假装通过。
+function GetRowLabels {
+  param($Panel)
+  $labels = New-Object System.Collections.ArrayList
+  foreach ($row in $Panel.Children) {
+    $grid = $row.Child
+    $outer = $grid.Children | Where-Object { $_ -is [System.Windows.Controls.StackPanel] } | Select-Object -First 1
+    $inner = $outer.Children | Where-Object { $_ -is [System.Windows.Controls.StackPanel] } | Select-Object -First 1
+    $label = $inner.Children | Where-Object { $_ -is [System.Windows.Controls.TextBlock] } | Select-Object -First 1
+    [void]$labels.Add($(if ($label) { $label.Text } else { '<取不到标签>' }))
+  }
+  return $labels.ToArray()
+}
+
 Write-Host "`n=== 1) 载入界面 + 装配 ===" -ForegroundColor Cyan
 $w = Import-DshWizardXaml -Path (Get-DshWizardWindowPath)
 Initialize-DshWizardWindow -Window $w
@@ -56,15 +72,40 @@ Check 'tbPort 已预填为数字' ("$($w.FindName('tbPort').Text)" -match '^\d+$
 Check 'tbName 已预填' ("$($w.FindName('tbName').Text)" -ne '') "$($w.FindName('tbName').Text)"
 Check '来源提示已填' ("$($w.FindName('tbRepoSource').Text)" -ne '') "$($w.FindName('tbRepoSource').Text)"
 Check '「获取 dsh」按钮存在' ($null -ne $w.FindName('btnFetch')) ''
+Check '「前置依赖」容器存在' ($null -ne $w.FindName('pnlDeps')) ''
+Check '「前置依赖」摘要控件存在' ($null -ne $w.FindName('tbDepsSummary')) ''
 Write-Host "     来源提示 = $($w.FindName('tbRepoSource').Text)"
 
 Write-Host "`n=== 2) 同步自检：有效检出 ===" -ForegroundColor Cyan
 Start-DshWizardCheck -Window $w -Synchronous
-$rowCount = $w.FindName('pnlChecks').Children.Count
-Check '自检渲染 8 行' ($rowCount -eq 8) "实际 $rowCount"
+$depCount = $w.FindName('pnlDeps').Children.Count
+$envCount = $w.FindName('pnlChecks').Children.Count
+Check '「前置依赖」渲染 3 行' ($depCount -eq 3) "实际 $depCount"
+Check '「环境自检」渲染 5 行' ($envCount -eq 5) "实际 $envCount"
+Check '两处合计仍是 8 项' (($depCount + $envCount) -eq 8) "$depCount + $envCount"
+Check '「前置依赖」摘要已填' ("$($w.FindName('tbDepsSummary').Text)" -ne '') "$($w.FindName('tbDepsSummary').Text)"
+$depLabels = @(GetRowLabels -Panel $w.FindName('pnlDeps'))
+$envLabels = @(GetRowLabels -Panel $w.FindName('pnlChecks'))
+Check 'Node/Git/pnpm 都落在「前置依赖」块' (($depLabels -contains 'Node.js') -and ($depLabels -contains 'Git') -and ($depLabels -contains 'pnpm')) "$($depLabels -join ' | ')"
+Check '检出相关项都落在「环境自检」块' (($envLabels -contains 'dsh 检出') -and ($envLabels -contains '依赖（tsx）') -and ($envLabels -contains '构建产物') -and ($envLabels -contains '凭据') -and ($envLabels -contains '端口')) "$($envLabels -join ' | ')"
+Check '依赖项没有混进「环境自检」块' (-not ($envLabels -contains 'Node.js')) "$($envLabels -join ' | ')"
+Write-Host "     前置依赖 = $($depLabels -join ', ')  [$($w.FindName('tbDepsSummary').Text)]"
+Write-Host "     环境自检 = $($envLabels -join ', ')"
 Check '摘要非空' ("$($w.FindName('tbSummary').Text)" -ne '') ''
 Check '安装按钮可用' ($w.FindName('btnInstall').IsEnabled -eq $true) ''
 Write-Host "     摘要 = $($w.FindName('tbSummary').Text)"
+
+# 「前置依赖」那句摘要的三条分支都要覆盖到
+Update-DshWizardChecks -Window $w -Checks @(
+  [pscustomobject]@{ Id = 'node'; Label = 'Node.js'; Status = 'fail'; Detail = '未安装'; Hint = ''; Fix = 'node'; Group = 'dep' },
+  [pscustomobject]@{ Id = 'repo'; Label = 'dsh 检出'; Status = 'ok'; Detail = 'C:\x'; Hint = ''; Fix = ''; Group = 'env' }
+) | Out-Null
+Check '缺必需依赖时摘要说「必须先装」' ("$($w.FindName('tbDepsSummary').Text)" -match '必须先装') "$($w.FindName('tbDepsSummary').Text)"
+Update-DshWizardChecks -Window $w -Checks @(
+  [pscustomobject]@{ Id = 'git'; Label = 'Git'; Status = 'warn'; Detail = '未安装'; Hint = ''; Fix = 'git'; Group = 'dep' },
+  [pscustomobject]@{ Id = 'repo'; Label = 'dsh 检出'; Status = 'ok'; Detail = 'C:\x'; Hint = ''; Fix = ''; Group = 'env' }
+) | Out-Null
+Check '只缺可选依赖时摘要说只影响「获取 dsh」' ("$($w.FindName('tbDepsSummary').Text)" -match '只影响') "$($w.FindName('tbDepsSummary').Text)"
 
 Write-Host "`n=== 3) 有 fail 项时安装按钮应禁用 ===" -ForegroundColor Cyan
 $w.FindName('tbRepo').Text = 'C:\no-such-dsh'
@@ -175,8 +216,10 @@ if ($ShowWindow) {
   $auto.Start()
   [void]$real.ShowDialog()
 
-  $rendered = $real.FindName('pnlChecks').Children.Count
-  Check '开窗后异步自检渲染出 8 行' ($rendered -eq 8) "实际 $rendered"
+  # 异步路径也要走同一条分流逻辑，所以这里一并验证两块的行数
+  $renderedDeps = $real.FindName('pnlDeps').Children.Count
+  $renderedEnv = $real.FindName('pnlChecks').Children.Count
+  Check '开窗后异步自检渲染出 3 + 5 行' (($renderedDeps -eq 3) -and ($renderedEnv -eq 5)) "$renderedDeps + $renderedEnv"
   Check '开窗后摘要已更新' ("$($real.FindName('tbSummary').Text)" -ne '') ''
   $fetchLog = "$($real.FindName('tbLog').Text)"
   Check '获取流程的输出进了日志窗口' ($fetchLog -match '非空') "日志=$fetchLog"

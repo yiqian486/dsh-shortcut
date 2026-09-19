@@ -175,6 +175,14 @@
           <TextBlock x:Name="tbRepoHint" Style="{StaticResource Hint}" Margin="0,6,0,0"
                      Text="指向 deepseek-harness 源码检出的根目录（含 apps\cli）。"/>
 
+          <!-- 前置依赖单独成块：它说的是「这台机器上有没有」，跟检出自身的状态不是一回事 -->
+          <Grid Margin="0,20,0,0">
+            <TextBlock Style="{StaticResource SectionTitle}" Text="前置依赖"/>
+            <TextBlock x:Name="tbDepsSummary" HorizontalAlignment="Right" VerticalAlignment="Center"
+                       FontSize="11.5" Foreground="{StaticResource DimBrush}"/>
+          </Grid>
+          <StackPanel x:Name="pnlDeps" Margin="0,8,0,0"/>
+
           <TextBlock Style="{StaticResource SectionTitle}" Text="环境自检" Margin="0,20,0,0"/>
           <StackPanel x:Name="pnlChecks" Margin="0,8,0,0"/>
 

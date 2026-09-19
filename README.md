@@ -56,8 +56,10 @@ browser at the already-running instance. See [English quick start](#english-quic
 
 双击 **`setup-gui.cmd`**。它会：
 
-1. **自检环境**，逐项标出 ✅ 正常 / ⚠️ 可忽略 / ❌ 必须解决
-2. 缺 **Node.js / Git / pnpm** 时，那一行会出现「**一键安装**」按钮 —— 走 winget；winget 不可用就打开官方下载页
+1. **前置依赖**（Node.js / Git / pnpm）单独一块，右边给一句结论。缺谁就在那一行点「**一键安装**」
+   —— 走 winget；winget 不可用就打开官方下载页。装完会自动重读 `PATH` 并复查
+2. **环境自检**（dsh 检出 / tsx / 构建产物 / 凭据 / 端口）另一块，同样逐项标 ✅ 正常 / ⚠️ 可忽略 / ❌ 必须解决。
+   跟机器有关的事和跟检出有关的事分开看，不容易混
 3. **还没有 dsh 检出**？点「**获取 dsh**」：先过前置门禁（缺 git/node/pnpm 会先让你装），
    再 `git clone --depth 1` + `pnpm install`，输出实时打在日志区。
    失败会说明原因（clone 失败会提示可能是网络/加速器）；失败留下的半个目录会自动清理，

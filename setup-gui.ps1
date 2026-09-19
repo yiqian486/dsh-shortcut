@@ -183,8 +183,10 @@ function Update-DshWizardChecks {
     [Parameter(Mandatory)] [object[]] $Checks
   )
 
-  $panel = $Window.FindName('pnlChecks')
-  $panel.Children.Clear()
+  $depPanel = $Window.FindName('pnlDeps')
+  $envPanel = $Window.FindName('pnlChecks')
+  $depPanel.Children.Clear()
+  $envPanel.Children.Clear()
 
   $onFix = {
     param($fixName)
@@ -207,9 +209,22 @@ function Update-DshWizardChecks {
     }
   }.GetNewClosure()
 
-  foreach ($c in $Checks) {
-    $panel.Children.Add((New-DshCheckRow -Check $c -OnFix $onFix)) | Out-Null
-  }
+  # 按 Group 分流。Group 缺省视为 env，这样手工构造的检查项（测试里就有）也能正常渲染。
+  $deps = @($Checks | Where-Object { "$($_.Group)" -eq 'dep' })
+  $envs = @($Checks | Where-Object { "$($_.Group)" -ne 'dep' })
+
+  foreach ($c in $deps) { $depPanel.Children.Add((New-DshCheckRow -Check $c -OnFix $onFix)) | Out-Null }
+  foreach ($c in $envs) { $envPanel.Children.Add((New-DshCheckRow -Check $c -OnFix $onFix)) | Out-Null }
+
+  # 「前置依赖」这一块自己给一句结论——它跟下面的检出状态是两回事
+  $depFail = @($deps | Where-Object { $_.Status -eq 'fail' }).Count
+  $depWarn = @($deps | Where-Object { $_.Status -eq 'warn' }).Count
+  $depText = if ($depFail -gt 0) { "缺 $depFail 项，必须先装" }
+             elseif ($depWarn -gt 0) { "缺 $depWarn 项，只影响「获取 dsh」" }
+             else { "$(@($deps).Count) 项齐备" }
+  $depBlock = $Window.FindName('tbDepsSummary')
+  $depBlock.Text = $depText
+  $depBlock.Foreground = ConvertTo-DshBrush $(if ($depFail -gt 0) { '#E5484D' } elseif ($depWarn -gt 0) { '#E6A23C' } else { '#9A9AA6' })
 
   $summary = Get-DshCheckSummary -Checks $Checks
   $level = if ($summary.Fail -gt 0) { 'fail' } elseif ($summary.Warn -gt 0) { 'warn' } else { 'ok' }
