@@ -91,13 +91,13 @@ $w.FindName('cbStartMenu').IsChecked = $false
 $res = Invoke-DshWizardInstall -Window $w
 Check '安装返回 Ok' ($res.Ok -eq $true) ($res.Errors -join '; ')
 Check 'config.json 已写' (Test-Path -LiteralPath $res.ConfigPath) "$($res.ConfigPath)"
-Check '快捷方式已建' ($res.Shortcuts.Count -eq 1 -and (Test-Path -LiteralPath $res.Shortcuts[0])) "$($res.Shortcuts -join ', ')"
+Check '快捷方式已建' (@($res.Shortcuts).Count -eq 1 -and (Test-Path -LiteralPath @($res.Shortcuts)[0])) "$($res.Shortcuts -join ', ')"
 if (Test-Path -LiteralPath $res.ConfigPath) {
   $cfg = Get-Content -LiteralPath $res.ConfigPath -Raw | ConvertFrom-Json
   Check 'config.repo 正确' ($cfg.repo -eq 'D:\deepseek-harness\deepseek-harness') "$($cfg.repo)"
   Check 'config.port = 3080' ($cfg.port -eq 3080) "$($cfg.port)"
 }
-if ($res.Shortcuts.Count -eq 1) {
+if (@($res.Shortcuts).Count -eq 1) {
   $shell = New-Object -ComObject WScript.Shell
   $lnkArgs = ($shell.CreateShortcut($res.Shortcuts[0])).Arguments
   Check '快捷方式不带 -Repo（让 config 生效）' ($lnkArgs -notmatch '-Repo') "$lnkArgs"

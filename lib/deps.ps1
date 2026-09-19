@@ -85,6 +85,8 @@ function Get-DshDependencyPlan {
   生成安装步骤（不执行）。向导用它预览、Install-DshDependency 用它执行、测试用它断言。
 
   @returns 步骤数组，每项 { Kind, Text, File?, Args? }；Kind 取值 winget|corepack|npm|open。
+           注意：PowerShell 会把**单元素数组解包成标量**，而 Windows PowerShell 5.1 下
+           PSCustomObject 没有 .Count。调用方要取数量请写 @(Get-DshDependencySteps ...).Count。
 #>
 function Get-DshDependencySteps {
   param([Parameter(Mandatory)] [ValidateSet('git', 'node', 'pnpm')] [string] $Name)
@@ -142,9 +144,11 @@ function Install-DshDependency {
   }.GetNewClosure()
 
   if ($DryRun) {
+    # 注意 @()：PowerShell 会把单元素数组解包成标量，而 Windows PowerShell 5.1 下
+    # PSCustomObject **没有** .Count（pwsh 7 才有）。不包一层，只有一步的依赖会显示成「执行  个步骤」。
     return [pscustomobject]@{
       Name = $Name; Label = $spec.Label; Ok = $false; Method = 'dryrun'
-      Message = "将执行 $($steps.Count) 个步骤（DryRun，未真正执行）"
+      Message = "将执行 $(@($steps).Count) 个步骤（DryRun，未真正执行）"
       Steps = $steps; NeedsManual = $false; DownloadPage = $spec.DownloadPage
     }
   }
