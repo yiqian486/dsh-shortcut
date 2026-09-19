@@ -55,7 +55,9 @@ browser at the already-running instance. See [English quick start](#english-quic
 1. **自检环境**，逐项标出 ✅ 正常 / ⚠️ 可忽略 / ❌ 必须解决
 2. 缺 **Node.js / Git / pnpm** 时，那一行会出现「**一键安装**」按钮 —— 走 winget；winget 不可用就打开官方下载页
 3. **还没有 dsh 检出**？点「**获取 dsh**」：先过前置门禁（缺 git/node/pnpm 会先让你装），
-   再 `git clone --depth 1` + `pnpm install`，输出实时打在日志区，失败会说明原因而不是静默停下
+   再 `git clone --depth 1` + `pnpm install`，输出实时打在日志区。
+   失败会说明原因（clone 失败会提示可能是网络/加速器）；失败留下的半个目录会自动清理，
+   再点一次就是重试 —— 但**有效检出绝不会被删**，`-KeepFailedTarget` 可保留现场用于排查
 4. 选 dsh 检出目录（带「浏览」）、端口、快捷方式名字与位置
 5. 点「**安装**」：写入 `%USERPROFILE%\.dsh-shortcut\config.json`，并按勾选生成快捷方式
 

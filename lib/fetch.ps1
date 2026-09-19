@@ -123,7 +123,9 @@ function Invoke-DshFetch {
     [switch] $WithBuild,
     [scriptblock] $OnOutput,
     [switch] $DryRun,
-    [object[]] $Plan
+    [object[]] $Plan,
+    # 失败时保留现场（不清理本次留下的半个目录），排查用
+    [switch] $KeepFailedTarget
   )
 
   $emit = {
@@ -134,6 +136,8 @@ function Invoke-DshFetch {
   $messages = New-Object System.Collections.ArrayList
 
   $targetState = Test-DshFetchTarget -Target $Target
+  # 记下目标是不是本次新建的：失败清理只针对「我们刚造出来的」目录
+  $createdByUs = ($targetState.State -eq 'create')
   [void]$messages.Add($targetState.Detail)
   & $emit $targetState.Detail
 
@@ -225,6 +229,22 @@ function Invoke-DshFetch {
       $ok = $false
       $failed = 'verify-install'
       & $emit '  依赖装完后仍找不到 tsx，pnpm install 可能没成功。'
+    }
+  }
+
+  # --- 失败恢复：清理本次失败留下的半个目录 ---
+  # clone 中断可能留下一个「既不是检出、又非空」的目录。不清理的话，用户再点一次
+  # 就会被「目标目录非空」挡在门外，只能自己去删。这里只删**本次由我们创建**、
+  # 且不是有效检出的目录；-KeepFailedTarget 可以保留现场用于排查。
+  if ((-not $ok) -and $createdByUs -and (-not $KeepFailedTarget) -and (Test-Path -LiteralPath $Target)) {
+    $stillNotCheckout = -not (Test-Path -LiteralPath (Join-DshPath $Target 'package.json'))
+    if ($stillNotCheckout) {
+      try {
+        Remove-Item -Recurse -Force -LiteralPath $Target
+        & $emit "  已清理本次失败留下的目录：$Target（重试不会再被「目录非空」挡住）"
+      } catch {
+        & $emit "  清理失败留下的目录时出错：$($_.Exception.Message)"
+      }
     }
   }
 

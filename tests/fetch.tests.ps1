@@ -148,6 +148,56 @@ Check 'git 计划文案步数正确' ($dryGit.Message -match '将执行 1 个步
 $dryPnpm = Install-DshDependency -Name 'pnpm' -DryRun
 Check 'pnpm 计划文案步数为数字' ($dryPnpm.Message -match '将执行 [0-9]+ 个步骤') "$($dryPnpm.Message)"
 
+Write-Host "`n=== 11) 失败恢复：清理本次留下的半个目录 ===" -ForegroundColor Cyan
+# clone 中断会留下「非空但又不是检出」的目录；不清理，用户重试就会被「目录非空」挡住。
+$partialTarget = Join-Path $work 'partial-target'
+$makePartial = "New-Item -ItemType Directory -Force -Path '$partialTarget' | Out-Null; 'half' | Set-Content -LiteralPath '$partialTarget\.git-partial'"
+$partialPlan = @(
+  [pscustomobject]@{ Kind = 'git-clone'; Optional = $false; WorkingDirectory = $work
+    Text = 'stub partial clone'; File = $ps51; Args = @('-NoProfile', '-Command', $makePartial) },
+  [pscustomobject]@{ Kind = 'pnpm-install'; Optional = $false; WorkingDirectory = $partialTarget
+    Text = 'stub install failing'; File = $ps51; Args = @('-NoProfile', '-Command', 'exit 5') }
+)
+$global:captured = New-Object System.Collections.ArrayList
+$partialRes = Invoke-DshFetch -Target $partialTarget -Plan $partialPlan -OnOutput { param($m) [void]$global:captured.Add("$m") }
+Check '整体判定为失败' ($partialRes.Ok -eq $false) "Ok=$($partialRes.Ok)"
+Check '半个目录被清理掉' (-not (Test-Path -LiteralPath $partialTarget)) '目录还在'
+Check '日志说明了已清理' (($global:captured -join "`n") -match '已清理本次失败留下的目录') ''
+Check '清理后重试不再被「目录非空」挡住' ((Test-DshFetchTarget -Target $partialTarget).State -eq 'create') ''
+
+# 同一个失败场景加 -KeepFailedTarget：应当保留现场
+$keepTarget = Join-Path $work 'keep-target'
+$keepPartial = "New-Item -ItemType Directory -Force -Path '$keepTarget' | Out-Null; 'half' | Set-Content -LiteralPath '$keepTarget\.git-partial'"
+$keepPlan = @(
+  [pscustomobject]@{ Kind = 'git-clone'; Optional = $false; WorkingDirectory = $work
+    Text = 'stub partial clone'; File = $ps51; Args = @('-NoProfile', '-Command', $keepPartial) },
+  [pscustomobject]@{ Kind = 'pnpm-install'; Optional = $false; WorkingDirectory = $keepTarget
+    Text = 'stub install failing'; File = $ps51; Args = @('-NoProfile', '-Command', 'exit 5') }
+)
+$keepRes = Invoke-DshFetch -Target $keepTarget -Plan $keepPlan -KeepFailedTarget
+Check '-KeepFailedTarget 时保留现场' (Test-Path -LiteralPath $keepTarget) '现场被删了'
+
+# 安全断言：就算失败，也不能删掉一个**有效检出**（可能只是依赖没装上，留着让用户修）
+$safeTarget = Join-Path $work 'safe-target'
+$safePlan = @(
+  [pscustomobject]@{ Kind = 'git-clone'; Optional = $false; WorkingDirectory = $work
+    Text = 'stub full checkout'; File = $ps51
+    Args = @('-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', $maker, '-Target', $safeTarget) },
+  [pscustomobject]@{ Kind = 'pnpm-install'; Optional = $false; WorkingDirectory = $safeTarget
+    Text = 'stub install failing'; File = $ps51; Args = @('-NoProfile', '-Command', 'exit 5') }
+)
+$safeRes = Invoke-DshFetch -Target $safeTarget -Plan $safePlan
+Check '失败于装依赖时仍判定失败' ($safeRes.Ok -eq $false) "Ok=$($safeRes.Ok)"
+Check '有效检出不会被误删' (Test-Path -LiteralPath (Join-DshPath $safeTarget 'package.json')) '检出被删了'
+
+# 目标目录本来就存在（empty）时，失败也不该删别人的目录
+$preTarget = Join-Path $work 'pre-existing'
+New-Item -ItemType Directory -Force -Path $preTarget | Out-Null
+$prePlan = @([pscustomobject]@{ Kind = 'git-clone'; Optional = $false; WorkingDirectory = $work
+    Text = 'stub failing clone'; File = $ps51; Args = @('-NoProfile', '-Command', 'exit 5') })
+$preRes = Invoke-DshFetch -Target $preTarget -Plan $prePlan
+Check '预先存在的目录失败后仍保留' (Test-Path -LiteralPath $preTarget) '被删了'
+
 Remove-Item -Recurse -Force $work -ErrorAction SilentlyContinue
 
 Write-Host ''
