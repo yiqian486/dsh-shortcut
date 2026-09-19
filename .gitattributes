@@ -1,0 +1,12 @@
+# 统一以 LF 存储与检出:Windows 上 core.autocrlf=true 会把 .patch 变成 CRLF,
+# 那会让 `git apply` 失败。.ps1 用 LF 在 PowerShell 5.1 / 7 下都正常。
+* text=auto eol=lf
+
+*.patch text eol=lf
+*.ps1   text eol=lf
+*.md    text eol=lf
+
+# 二进制
+*.lnk binary
+*.png binary
+*.ico binary

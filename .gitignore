@@ -1,0 +1,24 @@
+# 凭据与本地状态:绝对不能提交
+.credentials.yaml
+.credentials.json
+**/.credentials.yaml
+*.key
+
+# 启动器 / 开发用的临时 DSH_HOME(可能含凭据副本、会话、缓存)
+.dsh-launch-test/
+.dsh-dev-home/
+.dsh-test*/
+.dsh-home*/
+
+# 生成的快捷方式(用 install.ps1 重新生成,不必入库)
+*.lnk
+
+# 本机日志
+*.log
+open-dsh.log
+
+# 编辑器 / 系统
+.vscode/
+.idea/
+Thumbs.db
+desktop.ini
