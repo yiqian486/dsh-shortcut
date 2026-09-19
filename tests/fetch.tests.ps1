@@ -91,8 +91,12 @@ Check '被门禁拦下' ($gateRes.FailedStep -eq 'gate') "$($gateRes.FailedStep)
 Check '列出全部缺失项' (($gateRes.Gate.Missing -join ',') -eq 'git,node,pnpm') "$($gateRes.Gate.Missing -join ',')"
 Check '拦下时没有创建目录' (-not (Test-Path -LiteralPath $gateTarget)) ''
 Check '拦下时提示先装依赖' (($global:captured -join "`n") -match '先在上面的自检里') ''
-# 还原真实的命令探测（重新 dot-source 覆盖掉替身）
-. (Join-Path $here 'lib\checks.ps1')
+# 后面几段测的是「执行与失败恢复」，不是门禁本身。这里把依赖探测固定为「全部齐备」，
+# 免得测试结果取决于跑测机器上有没有 pnpm（CI 的 windows-latest 默认没有）。
+function Get-DshCommandInfo {
+  param([string] $Name)
+  return [pscustomobject]@{ Present = $true; Path = "$env:SystemRoot\System32\cmd.exe" }
+}
 
 Write-Host "`n=== 5) 成功路径（替身命令，不联网） ===" -ForegroundColor Cyan
 $global:captured = New-Object System.Collections.ArrayList

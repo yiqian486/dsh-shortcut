@@ -1,0 +1,34 @@
+name: CI
+
+on:
+  push:
+    branches: ['**']
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  test:
+    runs-on: windows-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      # 发布对账：.iss 引用完整性 + 打包清单覆盖度。
+      # 不需要 Inno Setup，所以放在最前面快速失败。
+      - name: 发布一致性对账
+        shell: pwsh
+        run: |
+          $ps = Join-Path $env:SystemRoot 'System32\WindowsPowerShell\v1.0\powershell.exe'
+          & $ps -NoProfile -ExecutionPolicy Bypass -File .\installer\build.ps1 -LintOnly
+          if ($LASTEXITCODE -ne 0) { throw '打包对账未通过' }
+
+      # 用 Windows PowerShell 5.1 跑，因为这是本项目承诺兼容的最低版本。
+      # setup-gui 的测试需要 STA（WPF），所以显式加 -STA。
+      - name: 测试（Windows PowerShell 5.1）
+        shell: pwsh
+        run: |
+          $ps = Join-Path $env:SystemRoot 'System32\WindowsPowerShell\v1.0\powershell.exe'
+          & $ps -NoProfile -ExecutionPolicy Bypass -File .\tests\fetch.tests.ps1
+          if ($LASTEXITCODE -ne 0) { throw 'fetch 测试未通过' }
+          & $ps -NoProfile -STA -ExecutionPolicy Bypass -File .\tests\setup-gui.tests.ps1
+          if ($LASTEXITCODE -ne 0) { throw 'setup-gui 测试未通过' }

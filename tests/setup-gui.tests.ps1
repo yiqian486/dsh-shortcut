@@ -25,6 +25,10 @@ function Check {
   else { Write-Host "  FAIL  $Name   [$Detail]" -ForegroundColor Red; $script:fail++ }
 }
 
+# 记下项目目录里那个真实快捷方式在测试前是否存在：测试不该改动它。
+# 断言比的是「状态没变」而不是「一定存在」—— CI 上本来就没有这个文件。
+$script:realLnkBefore = Test-Path -LiteralPath (Join-Path $here '打开 DSH.lnk')
+
 $workDir = Join-Path $here '.dsh-test-wizard'
 New-Item -ItemType Directory -Force -Path $workDir | Out-Null
 
@@ -138,7 +142,7 @@ Check '异步结果里 repo 为 fail（bound 真的传进去了）' ($repoRow.St
 
 Write-Host "`n=== 8) 真实环境未被波及 ===" -ForegroundColor Cyan
 Check '真实 config 未被创建' (-not (Test-Path -LiteralPath (Join-Path $env:USERPROFILE '.dsh-shortcut\config.json'))) ''
-Check '真实快捷方式仍在' (Test-Path -LiteralPath (Join-Path $here '打开 DSH.lnk')) ''
+Check '项目目录里的快捷方式未被改动' ((Test-Path -LiteralPath (Join-Path $here '打开 DSH.lnk')) -eq $script:realLnkBefore) ''
 
 if ($ShowWindow) {
   Write-Host "`n=== 9) 真开窗口：异步自检 + 获取 dsh 的完整链路 ===" -ForegroundColor Cyan

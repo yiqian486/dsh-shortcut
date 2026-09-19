@@ -59,6 +59,8 @@ $script:PackageExcludes = @(
   '.gitignore'
   'installer\build.ps1'
   'installer\dsh-shortcut.iss'
+  '.github\workflows\ci.yml'
+  '.github\workflows\release.yml'
 )
 
 function Write-Result {

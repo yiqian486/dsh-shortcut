@@ -38,6 +38,8 @@ browser at the already-running instance. See [English quick start](#english-quic
 | `tests/fetch.tests.ps1` | 获取检出流程的测试（用替身命令，不联网） |
 | `installer/build.ps1` | 出安装包与便携 ZIP，并在编译前做发布一致性对账 |
 | `installer/dsh-shortcut.iss` | Inno Setup 打包脚本 |
+| `.github/workflows/ci.yml` | push / PR 时跑发布对账 + 两套测试 |
+| `.github/workflows/release.yml` | 打 `v*` 标签自动构建并发布 Release |
 | `docs/dsh-tool-scheduler-symbol.md` | `reading 'prepare'` 崩溃的根因、修复与验证方法 |
 | `patches/fix-tool-scheduler-symbol.patch` | 上述修复的一行补丁 |
 
@@ -222,6 +224,20 @@ powershell -NoProfile -STA -ExecutionPolicy Bypass -File .\tests\setup-gui.tests
 - **`.iss` 还没经过真实编译验证** —— 写这份脚本的机器上没有 Inno Setup。
   上面那套对账覆盖的是文件清单类错误；编译器层面的问题（语法、段落名）
   要等你装好 Inno Setup 跑一次 `build.ps1` 才能确认。便携 ZIP 那条路径是完整验证过的。
+
+### 自动发布
+
+打一个 `v*` 标签，GitHub Actions 会在 `windows-latest` 上先跑发布对账和两套测试，
+再装 Inno Setup、构建两个产物，最后挂到 Release：
+
+```powershell
+git tag v0.1.0
+git push origin v0.1.0
+```
+
+也可以在 Actions 页面手动触发 Release 工作流并指定版本号；那种情况下只上传工作流产物，不发 Release。
+
+> 先测试再出包是有意的：产物一旦发出去就收不回来，宁可让流水线在这里红掉。
 
 ## 相关
 

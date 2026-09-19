@@ -1,0 +1,76 @@
+name: Release
+
+# 打 v* 标签自动出版，或在 Actions 页面手动指定版本号出一次。
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+    inputs:
+      version:
+        description: '版本号（不带 v 前缀，例如 0.1.0）'
+        required: true
+        default: '0.1.0'
+
+# 创建 Release 需要写权限
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: windows-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: 确定版本号
+        id: version
+        shell: pwsh
+        run: |
+          if ('${{ github.event_name }}' -eq 'workflow_dispatch') {
+            $v = '${{ github.event.inputs.version }}'
+          } else {
+            $v = '${{ github.ref_name }}'.TrimStart('v')
+          }
+          if ($v -notmatch '^\d+\.\d+\.\d+') { throw "版本号看起来不对：$v" }
+          Write-Host "版本号：$v"
+          "version=$v" >> $env:GITHUB_OUTPUT
+
+      # 先跑测试和发布对账：产物发出去就收不回来了，宁可在这里失败
+      - name: 测试（Windows PowerShell 5.1）
+        shell: pwsh
+        run: |
+          $ps = Join-Path $env:SystemRoot 'System32\WindowsPowerShell\v1.0\powershell.exe'
+          & $ps -NoProfile -ExecutionPolicy Bypass -File .\tests\fetch.tests.ps1
+          if ($LASTEXITCODE -ne 0) { throw 'fetch 测试未通过' }
+          & $ps -NoProfile -STA -ExecutionPolicy Bypass -File .\tests\setup-gui.tests.ps1
+          if ($LASTEXITCODE -ne 0) { throw 'setup-gui 测试未通过' }
+
+      # windows-latest 自带 Chocolatey；装完 ISCC.exe 落在
+      # "C:\Program Files (x86)\Inno Setup 6\"，正是 build.ps1 会去找的位置
+      - name: 安装 Inno Setup
+        run: choco install innosetup --no-progress -y
+
+      - name: 构建安装包与便携 ZIP
+        shell: pwsh
+        run: |
+          $ps = Join-Path $env:SystemRoot 'System32\WindowsPowerShell\v1.0\powershell.exe'
+          & $ps -NoProfile -ExecutionPolicy Bypass -File .\installer\build.ps1 -Version '${{ steps.version.outputs.version }}'
+          if ($LASTEXITCODE -ne 0) { throw '构建失败' }
+
+      # 即使只是手动触发（不发 Release），也把产物留下来方便下载排查
+      - name: 上传构建产物
+        uses: actions/upload-artifact@v4
+        with:
+          name: dsh-shortcut-${{ steps.version.outputs.version }}
+          path: dist/*
+          if-no-files-found: error
+
+      - name: 发布 Release（仅打 tag 时）
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            dist/*.exe
+            dist/*.zip
+          generate_release_notes: true
+          draft: false
