@@ -39,6 +39,8 @@ jobs:
       - name: 测试（Windows PowerShell 5.1）
         shell: pwsh
         run: |
+          # 同 ci.yml：把检出路径指向不存在的位置，逼出任何对「机器上已有检出」的依赖
+          $env:DSH_REPO = 'C:\no-such-checkout-ci-sim'
           $ps = Join-Path $env:SystemRoot 'System32\WindowsPowerShell\v1.0\powershell.exe'
           & $ps -NoProfile -ExecutionPolicy Bypass -File .\tests\fetch.tests.ps1
           if ($LASTEXITCODE -ne 0) { throw 'fetch 测试未通过' }

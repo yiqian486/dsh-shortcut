@@ -27,6 +27,9 @@ jobs:
       - name: 测试（Windows PowerShell 5.1）
         shell: pwsh
         run: |
+          # 故意把检出路径指到一个不存在的位置。测试不该依赖「机器上真有一份检出」——
+          # 这种依赖在开发机上永远看不出来（本地就有），只会在 CI 上炸。
+          $env:DSH_REPO = 'C:\no-such-checkout-ci-sim'
           $ps = Join-Path $env:SystemRoot 'System32\WindowsPowerShell\v1.0\powershell.exe'
           & $ps -NoProfile -ExecutionPolicy Bypass -File .\tests\fetch.tests.ps1
           if ($LASTEXITCODE -ne 0) { throw 'fetch 测试未通过' }

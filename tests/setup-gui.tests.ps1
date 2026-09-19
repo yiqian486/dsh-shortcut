@@ -38,6 +38,16 @@ Remove-Item -LiteralPath $env:DSH_SHORTCUT_CONFIG -ErrorAction SilentlyContinue
 Remove-Item -Recurse -Force $global:tempPlace -ErrorAction SilentlyContinue
 New-Item -ItemType Directory -Force -Path $global:tempPlace | Out-Null
 
+# 造一份「假 dsh 检出」。测试**不能**依赖机器上真有一份检出，更不能依赖作者本机的默认路径 ——
+# 之前第 2 段用的是默认值、第 5 段把路径写死成 D:\deepseek-harness\deepseek-harness，
+# 于是本地全绿、CI 上必红（CI 没有那个目录）。
+$fakeCheckout = Join-Path $workDir 'fake-checkout'
+New-Item -ItemType Directory -Force -Path (Join-Path $fakeCheckout 'apps\cli\src') | Out-Null
+New-Item -ItemType Directory -Force -Path (Join-Path $fakeCheckout 'node_modules\tsx') | Out-Null
+'{}' | Set-Content -LiteralPath (Join-Path $fakeCheckout 'package.json')
+'x' | Set-Content -LiteralPath (Join-Path $fakeCheckout 'apps\cli\src\bin.ts')
+'{"version":"4.22.4"}' | Set-Content -LiteralPath (Join-Path $fakeCheckout 'node_modules\tsx\package.json')
+
 . (Join-Path $here 'setup-gui.ps1') -NoRun
 
 function GetBtn {
@@ -77,6 +87,8 @@ Check '「前置依赖」摘要控件存在' ($null -ne $w.FindName('tbDepsSumma
 Write-Host "     来源提示 = $($w.FindName('tbRepoSource').Text)"
 
 Write-Host "`n=== 2) 同步自检：有效检出 ===" -ForegroundColor Cyan
+# 显式指向假检出，不用默认值 —— 默认值是作者本机路径，CI 上不存在
+$w.FindName('tbRepo').Text = $fakeCheckout
 Start-DshWizardCheck -Window $w -Synchronous
 $depCount = $w.FindName('pnlDeps').Children.Count
 $envCount = $w.FindName('pnlChecks').Children.Count
@@ -130,7 +142,7 @@ Check '点击按钮会调用 OnFix 并带上依赖名' (($clicked.Count -eq 1) -
 
 Write-Host "`n=== 5) 安装（重定向到临时目录） ===" -ForegroundColor Cyan
 function Get-DshPlaceDirectory { param([string] $Place) return $global:tempPlace }
-$w.FindName('tbRepo').Text = 'D:\deepseek-harness\deepseek-harness'
+$w.FindName('tbRepo').Text = $fakeCheckout
 $w.FindName('tbPort').Text = '3080'
 $w.FindName('cbDesktop').IsChecked = $true
 $w.FindName('cbStartMenu').IsChecked = $false
@@ -140,7 +152,7 @@ Check 'config.json 已写' (Test-Path -LiteralPath $res.ConfigPath) "$($res.Conf
 Check '快捷方式已建' (@($res.Shortcuts).Count -eq 1 -and (Test-Path -LiteralPath @($res.Shortcuts)[0])) "$($res.Shortcuts -join ', ')"
 if (Test-Path -LiteralPath $res.ConfigPath) {
   $cfg = Get-Content -LiteralPath $res.ConfigPath -Raw | ConvertFrom-Json
-  Check 'config.repo 正确' ($cfg.repo -eq 'D:\deepseek-harness\deepseek-harness') "$($cfg.repo)"
+  Check 'config.repo 正确' ($cfg.repo -eq $fakeCheckout) "$($cfg.repo)"
   Check 'config.port = 3080' ($cfg.port -eq 3080) "$($cfg.port)"
 }
 if (@($res.Shortcuts).Count -eq 1) {
@@ -159,7 +171,7 @@ $w.FindName('tbPort').Text = '3080'
 $w.FindName('tbRepo').Text = 'C:\no-such-dsh'
 $badRepo = Invoke-DshWizardInstall -Window $w
 Check '无效检出被拦' (($badRepo.Ok -eq $false) -and (($badRepo.Errors -join ' ') -match 'dsh 检出')) ($badRepo.Errors -join '; ')
-$w.FindName('tbRepo').Text = 'D:\deepseek-harness\deepseek-harness'
+$w.FindName('tbRepo').Text = $fakeCheckout
 $w.FindName('cbDesktop').IsChecked = $false
 $none = Invoke-DshWizardInstall -Window $w
 Check '两个位置都不勾被拦' (($none.Ok -eq $false) -and (($none.Errors -join ' ') -match '快捷方式')) ($none.Errors -join '; ')
