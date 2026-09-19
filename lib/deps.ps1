@@ -209,3 +209,36 @@ function Install-DshDependency {
     DownloadPage = $spec.DownloadPage
   }
 }
+
+<#
+  「要帮你去下载 dsh 检出」这件事的前置门禁。
+
+  在动手 clone 之前必须先过这一关，否则会走到一半才失败：
+    下载检出需要 git；装依赖需要 node + pnpm（或 Node 自带的 corepack）。
+    pnpm 单独放宽：corepack 在就算够，install 步骤会现场 corepack enable。
+
+  调用方（向导的「获取 dsh」流程）拿到 Missing 之后，逐个调 Install-DshDependency 即可。
+
+  @param Names - 要检查的依赖，默认就是下载 dsh 所需的三件套。
+  @returns { Ready, Missing[], Present[] }
+#>
+function Get-DshMissingDependencies {
+  param([string[]] $Names = @('git', 'node', 'pnpm'))
+
+  $missing = New-Object System.Collections.ArrayList
+  $present = New-Object System.Collections.ArrayList
+  $corepackPresent = (Get-DshCommandInfo 'corepack').Present
+
+  foreach ($name in $Names) {
+    $ok = (Get-DshCommandInfo $name).Present
+    # pnpm 可以由 corepack 现场启用，所以 corepack 在就不算缺
+    if (-not $ok -and $name -eq 'pnpm' -and $corepackPresent) { $ok = $true }
+    if ($ok) { [void]$present.Add($name) } else { [void]$missing.Add($name) }
+  }
+
+  return [pscustomobject]@{
+    Ready   = ($missing.Count -eq 0)
+    Missing = $missing.ToArray()
+    Present = $present.ToArray()
+  }
+}

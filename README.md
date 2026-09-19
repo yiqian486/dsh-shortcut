@@ -25,8 +25,15 @@ browser at the already-running instance. See [English quick start](#english-quic
 | 文件 | 作用 |
 | --- | --- |
 | `open-dsh.ps1` | 启动器本体。探测端口 → 已在跑就开浏览器，没跑就启动 `dsh web` |
-| `install.ps1` | 生成 Windows 快捷方式（`.lnk`），可放桌面 / 开始菜单 / 指定目录 |
+| `setup-gui.cmd` | **图形向导（双击这个）**：自检环境 → 选路径/端口 → 写配置 → 生成快捷方式 |
+| `install.ps1` | 命令行的快捷方式生成器（向导的 CLI 版），可放桌面 / 开始菜单 / 指定目录 |
 | `start-dsh-local.ps1` | 开发用启动器：可切换源码图（tsx）与构建图，并可并存换端口 |
+| `lib/config.ps1` | 配置读写与路径解析：参数 > 环境变量 > `config.json` > 默认 |
+| `lib/checks.ps1` | 环境自检：node / git / pnpm / 检出 / tsx / 构建产物 / 凭据 / 端口 |
+| `lib/deps.ps1` | 依赖安装：winget 优先，退到官方下载页，装完回填 `PATH` |
+| `lib/shortcut.ps1` | 生成 / 删除 `.lnk`（向导与命令行共用同一份） |
+| `ui/wizard.xaml` | 向导界面 |
+| `tests/setup-gui.tests.ps1` | 向导的自动化测试 |
 | `docs/dsh-tool-scheduler-symbol.md` | `reading 'prepare'` 崩溃的根因、修复与验证方法 |
 | `patches/fix-tool-scheduler-symbol.patch` | 上述修复的一行补丁 |
 
@@ -39,7 +46,19 @@ browser at the already-running instance. See [English quick start](#english-quic
 
 ## 快速开始
 
-### 1. 生成快捷方式
+### 1. 图形向导（推荐）
+
+双击 **`setup-gui.cmd`**。它会：
+
+1. **自检环境**，逐项标出 ✅ 正常 / ⚠️ 可忽略 / ❌ 必须解决
+2. 缺 **Node.js / Git / pnpm** 时，那一行会出现「**一键安装**」按钮 —— 走 winget；winget 不可用就打开官方下载页
+3. 选 dsh 检出目录（带「浏览」）、端口、快捷方式名字与位置
+4. 点「**安装**」：写入 `%USERPROFILE%\.dsh-shortcut\config.json`，并按勾选生成快捷方式
+
+> 向导生成的快捷方式**不带** `-Repo`，路径统一由 `config.json` 决定。
+> 因为命令行参数优先级高于配置，如果快捷方式里烧了旧路径，以后在向导里改路径就会被它压住。
+
+### 2. 命令行生成快捷方式
 
 ```powershell
 .\install.ps1
@@ -60,7 +79,7 @@ browser at the already-running instance. See [English quick start](#english-quic
 
 已存在同名快捷方式时不会覆盖，加 `-Force` 才会。
 
-### 2. 或者直接用脚本
+### 3. 或者直接用脚本
 
 ```powershell
 .\open-dsh.ps1
@@ -68,7 +87,7 @@ browser at the already-running instance. See [English quick start](#english-quic
 .\open-dsh.ps1 -Repo 'C:\src\deepseek-harness'
 ```
 
-### 3. 开发用启动器
+### 4. 开发用启动器
 
 ```powershell
 # 构建图(package exports -> packages/*/lib/*.js),等价于已安装消费者,最稳
@@ -144,6 +163,19 @@ browser at the already-running instance. See [English quick start](#english-quic
   `spawn EPERM` 失败：tsx 需要 esbuild 以管道 stdio 派生转换进程。这是环境限制，不是脚本问题，
   正常桌面双击不受影响；受限环境请用构建图（`start-dsh-local.ps1` 默认 `-Mode lib`）。
 - 「已在跑」那条路径不做深度健康检查，只确认端口在监听且返回的是 DSH 的页面。
+
+## 测试
+
+```powershell
+# 无头模式：界面构建、事件装配、安装动作、输入校验、异步取数
+powershell -NoProfile -STA -ExecutionPolicy Bypass -File .\tests\setup-gui.tests.ps1
+
+# 额外真开一次窗口，3 秒后自动关闭 —— 验证 ContentRendered → 异步自检 → 渲染 这条真实链路
+powershell -NoProfile -STA -ExecutionPolicy Bypass -File .\tests\setup-gui.tests.ps1 -ShowWindow
+```
+
+测试全程隔离：`config.json` 写进 `%DSH_SHORTCUT_CONFIG%` 指向的临时文件，快捷方式写进临时目录，
+跑完还会断言真实的 `config.json` 与桌面快捷方式没有被波及。
 
 ## 相关
 
