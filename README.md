@@ -241,6 +241,78 @@ git push origin v0.1.0
 
 > 先测试再出包是有意的：产物一旦发出去就收不回来，宁可让流水线在这里红掉。
 
+## 发布前自检清单
+
+打 tag 之前照这个走一遍。**第 1 步和第 7 步是重点** —— 它们覆盖的正是最容易出问题、而 CI 又帮不上忙的两处。
+
+### 1. 本地先把安装包编出来
+
+`.iss` 的问题如果等到打完 tag 才暴露，Release 会挂上一个空包，还得删 tag 重来。先在本地编一次：
+
+```powershell
+winget install JRSoftware.InnoSetup      # 只需装一次
+.\installer\build.ps1
+```
+
+`build.ps1` 会先做发布对账（`.iss` 引用完整性 + 打包清单覆盖度），对账不过直接停下，不会产出半成品。
+编完 `dist\` 下应该有两个文件：
+
+```
+dsh-shortcut-setup-<版本>.exe
+dsh-shortcut-portable-<版本>.zip
+```
+
+### 2. 装一遍，再卸一遍
+
+双击 `setup-<版本>.exe`，逐条确认：
+
+- [ ] **没有弹 UAC**（装的是当前用户目录）
+- [ ] 开始菜单里出现「DSH 启动器（配置向导）」和「卸载 DSH 启动器」
+- [ ] 装完自动弹出配置向导
+- [ ] 向导能自检；故意填一个错的检出路径，确认它给的是可读的错误而不是闪退
+- [ ] 从「应用和功能」卸载；卸载后桌面和开始菜单里的快捷方式被清掉
+
+### 3. 跑测试与对账
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File .\tests\fetch.tests.ps1
+powershell -NoProfile -STA -ExecutionPolicy Bypass -File .\tests\setup-gui.tests.ps1
+powershell -NoProfile -STA -ExecutionPolicy Bypass -File .\tests\setup-gui.tests.ps1 -ShowWindow
+.\installer\build.ps1 -LintOnly
+```
+
+CI 也会跑这些，本地先跑能省一轮往返。
+
+### 4. 确认提交状态
+
+```powershell
+git status          # 工作区应当是干净的
+git push            # 未推送的提交先落地
+```
+
+tag 只会指向已经推送的历史，所以**先推 main，再打 tag**。
+
+### 5. 打 tag 并推送
+
+```powershell
+git tag v0.1.0
+git push origin v0.1.0
+```
+
+⚠️ tag 一推就触发 Release 工作流，而且是**公开**的。版本号想好再打 —— 删掉重打需要额外推一次删除操作。
+
+### 6. 盯 CI，核对 Release
+
+- Actions 看绿灯：<https://github.com/yiqian486/dsh-shortcut/actions>
+- Release 页面确认两个产物都在，大小合理（安装包约 1–3 MB，便携 ZIP 约 50 KB）
+
+### 7. 按「陌生人第一次用」验一遍
+
+下载 Release 里的**便携 ZIP**，解压到**一个全新的空目录**，双击 `setup-gui.cmd`，
+看它能不能自己把问题找出来并引导解决（缺 Node 就提示一键装、没有检出就点「获取 dsh」）。
+
+这一步和自己机器上跑不是一回事 —— 你的机器上什么都是配好的，别人的机器上缺什么都有可能。
+
 ## 相关
 
 - 上游项目：[deepseek-ai/deepseek-harness](https://github.com/deepseek-ai/deepseek-harness)（MIT）
