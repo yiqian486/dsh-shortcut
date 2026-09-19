@@ -131,13 +131,27 @@ function Test-DshPackageCoverage {
 }
 
 function Find-DshIscc {
+  # 先试已知位置（含 6 / 7 两代，Chocolatey 换版本时不至于找不到）
   $candidates = @(
     (Join-Path ${env:ProgramFiles(x86)} 'Inno Setup 6\ISCC.exe'),
     (Join-Path $env:ProgramFiles 'Inno Setup 6\ISCC.exe'),
-    (Join-Path $env:LOCALAPPDATA 'Programs\Inno Setup 6\ISCC.exe')
+    (Join-Path $env:LOCALAPPDATA 'Programs\Inno Setup 6\ISCC.exe'),
+    (Join-Path ${env:ProgramFiles(x86)} 'Inno Setup 7\ISCC.exe'),
+    (Join-Path $env:ProgramFiles 'Inno Setup 7\ISCC.exe'),
+    (Join-Path $env:LOCALAPPDATA 'Programs\Inno Setup 7\ISCC.exe')
   )
   foreach ($c in $candidates) {
     if ($c -and (Test-Path -LiteralPath $c)) { return $c }
+  }
+  # 兜底：按版本目录通配，覆盖将来出现的新主版本
+  foreach ($base in @(${env:ProgramFiles(x86)}, $env:ProgramFiles, (Join-Path $env:LOCALAPPDATA 'Programs'))) {
+    if (-not $base -or -not (Test-Path -LiteralPath $base)) { continue }
+    $hit = Get-ChildItem -LiteralPath $base -Directory -Filter 'Inno Setup *' -ErrorAction SilentlyContinue |
+      Sort-Object Name -Descending |
+      ForEach-Object { Join-Path $_.FullName 'ISCC.exe' } |
+      Where-Object { Test-Path -LiteralPath $_ } |
+      Select-Object -First 1
+    if ($hit) { return $hit }
   }
   $cmd = Get-Command ISCC.exe -ErrorAction SilentlyContinue
   if ($cmd) { return $cmd.Source }
